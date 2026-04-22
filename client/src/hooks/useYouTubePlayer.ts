@@ -113,11 +113,28 @@ export const useYouTubePlayer = (containerId: string) => {
       if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
         const time = playerRef.current.getCurrentTime();
         setVideoState(prev => ({ ...prev, currentTime: time }));
+
+        if (typeof playerRef.current.getDuration === 'function') {
+          const latestDuration = playerRef.current.getDuration();
+          if (latestDuration && latestDuration !== duration) {
+            setDuration(latestDuration);
+          }
+        }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [videoState.isPlaying]);
+  }, [videoState.isPlaying, duration]);
+
+  useEffect(() => {
+    if (!playerRef.current || !isReady || !videoState.videoId) return;
+    if (typeof playerRef.current.getDuration !== 'function') return;
+
+    const latestDuration = playerRef.current.getDuration();
+    if (latestDuration && latestDuration !== duration) {
+      setDuration(latestDuration);
+    }
+  }, [videoState.videoId, isReady, duration]);
 
   const seekTo = useCallback((seconds: number) => {
     if (playerRef.current && isReady) {
