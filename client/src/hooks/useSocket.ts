@@ -19,7 +19,8 @@ export const useSocket = (roomId: string, participantId: string) => {
     if (!roomId || !participantId) return;
 
     const newSocket = io(SOCKET_URL, {
-      auth: { roomId, participantId }
+      auth: { roomId, participantId },
+      transports: ['websocket']
     });
 
     newSocket.on('connect', () => {
