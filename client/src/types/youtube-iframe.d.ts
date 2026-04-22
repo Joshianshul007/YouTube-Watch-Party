@@ -18,6 +18,10 @@ declare namespace YT {
     pauseVideo(): void;
     seekTo(seconds: number, allowSeekAhead: boolean): void;
     loadVideoById(videoId: string): void;
+    loadVideoById(options: { videoId: string; startSeconds?: number; endSeconds?: number; suggestedQuality?: string }): void;
+    mute(): void;
+    unMute(): void;
+    isMuted(): boolean;
   }
 
   interface OnReadyEvent {

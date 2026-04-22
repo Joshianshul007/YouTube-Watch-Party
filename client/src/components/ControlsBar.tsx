@@ -7,6 +7,8 @@ import toast from 'react-hot-toast';
 interface ControlsBarProps {
   duration?: number;
   onSeek?: (seconds: number) => void;
+  currentTime?: number;
+  getCurrentTime?: () => number;
 }
 
 const formatTime = (seconds: number) => {
@@ -16,15 +18,17 @@ const formatTime = (seconds: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
 };
 
-export const ControlsBar = ({ duration = 0, onSeek }: ControlsBarProps) => {
+export const ControlsBar = ({ duration = 0, onSeek, currentTime = 0, getCurrentTime }: ControlsBarProps) => {
   const { videoState, socket, role } = useRoom();
   const [urlInput, setUrlInput] = useState('');
 
   const isPrivileged = role === 'host' || role === 'moderator';
+  const displayTime = currentTime;
+  const readNow = () => (getCurrentTime ? getCurrentTime() : displayTime);
 
   const handlePlayPause = () => {
     if (!videoState.videoId || !isPrivileged || !socket) return;
-    socket.emit('toggle_playback', { currentTime: videoState.currentTime });
+    socket.emit('toggle_playback', { currentTime: readNow() });
   };
 
   const handleLoadUrl = (e: React.FormEvent) => {
@@ -66,13 +70,13 @@ export const ControlsBar = ({ duration = 0, onSeek }: ControlsBarProps) => {
       
       <div style={{ flex: 1, padding: '0 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <span style={{ fontSize: '0.875rem', fontFamily: 'monospace' }}>
-          {formatTime(videoState.currentTime)}
+          {formatTime(displayTime)}
         </span>
         <input 
           type="range" 
           min="0" 
           max={duration || 100} 
-          value={videoState.currentTime} 
+          value={displayTime} 
           onChange={handleSeek}
           disabled={!isPrivileged}
           style={{ flex: 1, cursor: isPrivileged ? 'pointer' : 'not-allowed', opacity: isPrivileged ? 1 : 0.7 }} 

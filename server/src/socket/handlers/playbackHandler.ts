@@ -91,6 +91,25 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
     if (updatedRoom) broadcastSyncState(updatedRoom);
   });
 
+  socket.on('host_heartbeat', async (data: { currentTime: number; isPlaying: boolean }) => {
+    if (!(await hasPermission())) return;
+    if (typeof data?.currentTime !== 'number' || isNaN(data.currentTime)) return;
+
+    const currentRoom = await roomStore.getRoom(roomId);
+    if (!currentRoom) return;
+    if (!currentRoom.videoState.videoId) return;
+
+    await roomStore.updateRoom(roomId, {
+      videoState: {
+        videoId: currentRoom.videoState.videoId,
+        isPlaying: !!data.isPlaying,
+        currentTime: Math.max(0, data.currentTime),
+        lastUpdated: Date.now(),
+      },
+    } as any);
+    // Do not broadcast; this is only to keep late joiners accurate.
+  });
+
   socket.on('change_video', async (data: { videoId: string }) => {
     if (!(await hasPermission())) return;
 

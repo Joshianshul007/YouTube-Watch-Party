@@ -14,10 +14,30 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3001;
 
-const frontendOrigin = process.env.FRONTEND_URL;
+const normalizeOrigin = (value: string) => value.trim().replace(/\/$/, '');
+
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(normalizeOrigin)
+  .filter(Boolean);
+
+const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+const isProd = process.env.NODE_ENV === 'production';
+const originAllowlist = new Set([
+  ...allowedOrigins,
+  ...(isProd ? [] : devOrigins),
+]);
+
 app.use(
   cors({
-    origin: frontendOrigin || true
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      const cleaned = normalizeOrigin(origin);
+      if (originAllowlist.size === 0) return cb(null, true);
+      if (originAllowlist.has(cleaned)) return cb(null, true);
+      return cb(new Error(`CORS blocked: ${origin}`));
+    },
+    credentials: true,
   })
 );
 app.use(express.json());

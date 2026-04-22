@@ -44,10 +44,33 @@ const RoomPageContent = () => {
         const data = await getRoom(roomId);
         setRoomCode(data.code);
         setParticipants(data.participants);
-        setVideoState(data.videoState);
-        setRole(role);
+        setVideoState(prev => {
+          const restUpdate = typeof data.videoState?.lastUpdated === 'number' ? data.videoState.lastUpdated : 0;
+          const prevUpdate = typeof prev?.lastUpdated === 'number' ? prev.lastUpdated : 0;
+          if (prevUpdate > restUpdate) return prev;
+          return {
+            videoId: data.videoState?.videoId ?? null,
+            isPlaying: !!data.videoState?.isPlaying,
+            currentTime: data.videoState?.currentTime ?? 0,
+            lastUpdated: restUpdate || Date.now(),
+          };
+        });
+
+        const me = data.participants?.find((p: { id: string }) => p.id === participantId);
+        if (me?.role) {
+          setRole(me.role);
+          try {
+            const key = `wp_session_${roomId}`;
+            const raw = localStorage.getItem(key);
+            const prevSession = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(key, JSON.stringify({ ...prevSession, participantId, role: me.role }));
+          } catch { /* ignore */ }
+        } else if (role) {
+          setRole(role);
+        }
       } catch (err) {
         toast.error('Room not found or expired.');
+        localStorage.removeItem(`wp_session_${roomId}`);
         navigate('/');
       } finally {
         setIsLoading(false);

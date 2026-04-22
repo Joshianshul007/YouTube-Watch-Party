@@ -27,7 +27,7 @@ export const RoomProvider = ({ children }: { children: ReactNode }) => {
     videoId: null,
     isPlaying: false,
     currentTime: 0,
-    lastUpdated: Date.now()
+    lastUpdated: 0
   });
   const [role, setRole] = useState<Role | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);

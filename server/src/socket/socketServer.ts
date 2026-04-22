@@ -15,10 +15,25 @@ export type SocketServerInit = {
 };
 
 export const initSocketServer = async (httpServer: HttpServer): Promise<SocketServerInit> => {
+  const normalizeOrigin = (value: string) => value.trim().replace(/\/$/, '');
+  const configured = (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map(normalizeOrigin)
+    .filter(Boolean);
+  const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+  const isProd = process.env.NODE_ENV === 'production';
+  const allowlist = new Set([...configured, ...(isProd ? [] : devOrigins)]);
+
   const io = new Server(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL || '*',
-      methods: ['GET', 'POST']
+      origin: (origin, cb) => {
+        if (!origin) return cb(null, true);
+        if (allowlist.size === 0) return cb(null, true);
+        if (allowlist.has(normalizeOrigin(origin))) return cb(null, true);
+        return cb(new Error(`Socket.IO CORS blocked: ${origin}`));
+      },
+      methods: ['GET', 'POST'],
+      credentials: true
     }
   });
 

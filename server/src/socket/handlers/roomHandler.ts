@@ -1,17 +1,19 @@
 import { Server, Socket } from 'socket.io';
 import { roomStore } from '../../store/RoomStore';
 
-const DISCONNECT_GRACE_MS = 5000;
+const DISCONNECT_GRACE_MS = 15000;
 
 const pendingRemovals = new Map<string, NodeJS.Timeout>();
 
-const cancelPendingRemoval = (roomId: string, participantId: string) => {
+const cancelPendingRemoval = (roomId: string, participantId: string): boolean => {
   const key = `${roomId}:${participantId}`;
   const timer = pendingRemovals.get(key);
   if (timer) {
     clearTimeout(timer);
     pendingRemovals.delete(key);
+    return true;
   }
+  return false;
 };
 
 export const registerRoomHandlers = (io: Server, socket: Socket) => {
@@ -19,7 +21,7 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
   const participantId: string = socket.data.participantId;
 
   socket.on('join_room', async () => {
-    cancelPendingRemoval(roomId, participantId);
+    const wasReconnect = cancelPendingRemoval(roomId, participantId);
     socket.join(roomId);
 
     const room = await roomStore.updateParticipantSocket(roomId, participantId, socket.id);
@@ -35,12 +37,31 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
       timestamp: room.videoState.lastUpdated
     });
 
-    socket.to(roomId).emit('user_joined', {
-      username: participant.username,
+    // Always re-hydrate the joining client with the authoritative participant list
+    // (covers role changes and mid-join race with other user_joined broadcasts).
+    socket.emit('room_snapshot', {
       participantId: participant.id,
       role: participant.role,
-      participants: room.participants
+      hostId: room.hostId,
+      participants: room.participants,
     });
+
+    if (wasReconnect) {
+      // Silent rejoin: other clients just need a fresh participants list
+      // (in case socketId changed), but no "joined the party" toast.
+      socket.to(roomId).emit('user_reconnected', {
+        participantId: participant.id,
+        username: participant.username,
+        participants: room.participants,
+      });
+    } else {
+      socket.to(roomId).emit('user_joined', {
+        username: participant.username,
+        participantId: participant.id,
+        role: participant.role,
+        participants: room.participants
+      });
+    }
   });
 
   socket.on('leave_room', async () => {
@@ -48,13 +69,27 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     await handleLeave(io, socket, roomId, participantId);
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
+    // Guard against stale disconnect events firing AFTER a newer socket has already
+    // re-authenticated for the same participant (common on browser refresh).
+    try {
+      const current = await roomStore.getRoom(roomId);
+      const cp = current?.participants.find(p => p.id === participantId);
+      if (!cp) return;
+      if (cp.socketId && cp.socketId !== socket.id) return;
+    } catch { /* fall through to grace handling */ }
+
     const key = `${roomId}:${participantId}`;
     cancelPendingRemoval(roomId, participantId);
 
     const timer = setTimeout(async () => {
       pendingRemovals.delete(key);
       try {
+        // Final race check: don't remove if a newer socket has taken over during grace.
+        const current = await roomStore.getRoom(roomId);
+        const cp = current?.participants.find(p => p.id === participantId);
+        if (cp && cp.socketId && cp.socketId !== socket.id) return;
+
         await handleLeave(io, socket, roomId, participantId);
       } catch (err) {
         console.error('Delayed leave failed:', err);
