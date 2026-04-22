@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: youtube-watch-party
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run start --workspace=server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: MONGO_MAX_POOL_SIZE
+        sync: false
