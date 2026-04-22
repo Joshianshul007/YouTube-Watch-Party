@@ -14,7 +14,13 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3001;
 
-const normalizeOrigin = (value: string) => value.trim().replace(/\/$/, '');
+const normalizeOrigin = (value: string) => {
+  let v = value.trim().replace(/\/$/, '');
+  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+};
 
 const allowedOrigins = (process.env.FRONTEND_URL || '')
   .split(',')
@@ -28,6 +34,12 @@ const originAllowlist = new Set([
   ...(isProd ? [] : devOrigins),
 ]);
 
+if (isProd && originAllowlist.size > 0) {
+  console.log('[CORS] Allowed origins:', [...originAllowlist].join(', '));
+} else if (isProd && originAllowlist.size === 0) {
+  console.warn('[CORS] FRONTEND_URL is empty — allowing any origin (set FRONTEND_URL for production).');
+}
+
 app.use(
   cors({
     origin: (origin, cb) => {
@@ -35,9 +47,13 @@ app.use(
       const cleaned = normalizeOrigin(origin);
       if (originAllowlist.size === 0) return cb(null, true);
       if (originAllowlist.has(cleaned)) return cb(null, true);
-      return cb(new Error(`CORS blocked: ${origin}`));
+      console.warn('[CORS] Blocked origin:', cleaned, '| allowlist:', [...originAllowlist].join(', '));
+      return cb(null, false);
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    optionsSuccessStatus: 204,
   })
 );
 app.use(express.json());

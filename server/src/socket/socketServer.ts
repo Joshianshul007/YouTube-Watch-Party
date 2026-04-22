@@ -15,7 +15,13 @@ export type SocketServerInit = {
 };
 
 export const initSocketServer = async (httpServer: HttpServer): Promise<SocketServerInit> => {
-  const normalizeOrigin = (value: string) => value.trim().replace(/\/$/, '');
+  const normalizeOrigin = (value: string) => {
+    let v = value.trim().replace(/\/$/, '');
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
+      v = v.slice(1, -1).trim();
+    }
+    return v;
+  };
   const configured = (process.env.FRONTEND_URL || '')
     .split(',')
     .map(normalizeOrigin)
@@ -30,7 +36,7 @@ export const initSocketServer = async (httpServer: HttpServer): Promise<SocketSe
         if (!origin) return cb(null, true);
         if (allowlist.size === 0) return cb(null, true);
         if (allowlist.has(normalizeOrigin(origin))) return cb(null, true);
-        return cb(new Error(`Socket.IO CORS blocked: ${origin}`));
+        return cb(null, false);
       },
       methods: ['GET', 'POST'],
       credentials: true
