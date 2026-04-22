@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { initSocketServer } from './socket/socketServer';
 import roomRoutes from './routes/roomRoutes';
 import { connectDB } from './db/connect';
@@ -27,16 +28,27 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-if (process.env.NODE_ENV === 'production') {
-  const clientDistPath = path.resolve(__dirname, '../../client/dist');
-  app.use(express.static(clientDistPath));
+const shouldServeClient =
+  process.env.NODE_ENV === 'production' && process.env.SERVE_CLIENT !== 'false';
 
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) {
-      return next();
-    }
-    res.sendFile(path.join(clientDistPath, 'index.html'));
-  });
+if (shouldServeClient) {
+  const clientDistPath = path.resolve(__dirname, '../../client/dist');
+  const indexHtmlPath = path.join(clientDistPath, 'index.html');
+
+  if (fs.existsSync(indexHtmlPath)) {
+    app.use(express.static(clientDistPath));
+
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
+      res.sendFile(indexHtmlPath);
+    });
+  } else {
+    console.log(
+      '[Static] client/dist/index.html not found, skipping SPA serving (frontend hosted separately).'
+    );
+  }
 }
 
 const bootstrap = async () => {
