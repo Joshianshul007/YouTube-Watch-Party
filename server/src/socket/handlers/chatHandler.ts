@@ -1,12 +1,16 @@
 import { Server, Socket } from 'socket.io';
 import { roomStore } from '../../store/RoomStore';
 
+const MAX_CHAT_MESSAGE_LENGTH = 300;
+
 export const registerChatHandlers = (io: Server, socket: Socket) => {
   const roomId: string = socket.data.roomId;
   const participantId: string = socket.data.participantId;
 
   socket.on('chat_message', async (data: { message: string }) => {
-    if (!data.message || !data.message.trim()) return;
+    const normalizedMessage = data.message?.trim();
+    if (!normalizedMessage) return;
+    if (normalizedMessage.length > MAX_CHAT_MESSAGE_LENGTH) return;
 
     const room = await roomStore.getRoom(roomId);
     if (!room) return;
@@ -18,7 +22,7 @@ export const registerChatHandlers = (io: Server, socket: Socket) => {
     io.in(roomId).emit('chat_broadcast', {
       username: participant.username,
       role: participant.role,
-      message: data.message.trim(),
+      message: normalizedMessage,
       timestamp: Date.now()
     });
   });

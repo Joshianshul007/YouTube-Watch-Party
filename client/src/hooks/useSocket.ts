@@ -106,6 +106,7 @@ export const useSocket = (roomId: string, participantId: string) => {
 
     newSocket.on('kicked', (data) => {
       toast.error(data.message);
+      localStorage.removeItem(`wp_session_${roomId}`);
       newSocket.disconnect();
       navigate('/');
     });

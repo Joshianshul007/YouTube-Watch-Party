@@ -16,7 +16,14 @@ export const CreateRoomForm = () => {
     setIsLoading(true);
     try {
       const data = await createRoom(username);
-      // Pass participantId and role in state to the room page
+      localStorage.setItem(
+        `wp_session_${data.roomId}`,
+        JSON.stringify({
+          participantId: data.participantId,
+          role: data.role,
+          username,
+        })
+      );
       navigate(`/room/${data.roomId}`, {
         state: { participantId: data.participantId, role: data.role },
       });

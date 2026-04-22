@@ -1,10 +1,11 @@
 import { Film, Copy, LogOut } from 'lucide-react';
 import { useRoom } from '../context/RoomContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 export const RoomHeader = () => {
   const { roomCode, setRoomCode, setParticipants } = useRoom();
+  const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
 
   const handleCopy = () => {
@@ -13,7 +14,9 @@ export const RoomHeader = () => {
   };
 
   const handleLeave = () => {
-    // Basic cleanup logic on voluntary leave
+    if (roomId) {
+      localStorage.removeItem(`wp_session_${roomId}`);
+    }
     navigate('/');
     setRoomCode('');
     setParticipants([]);

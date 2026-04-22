@@ -17,9 +17,19 @@ const RoomPageContent = () => {
   const { setRoomCode, setParticipants, setVideoState, setRole } = useRoom();
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fallback for direct URL hits without state
-  const participantId = location.state?.participantId;
-  const role = location.state?.role;
+  const storageKey = roomId ? `wp_session_${roomId}` : '';
+  const storedSession = (() => {
+    if (!storageKey) return null;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      return raw ? JSON.parse(raw) as { participantId: string; role: 'host' | 'moderator' | 'participant' } : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const participantId = location.state?.participantId || storedSession?.participantId;
+  const role = location.state?.role || storedSession?.role;
 
   useEffect(() => {
     if (!roomId) return;

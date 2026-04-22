@@ -1,22 +1,33 @@
 import { Server, Socket } from 'socket.io';
 import { roomStore } from '../../store/RoomStore';
 
+const DISCONNECT_GRACE_MS = 5000;
+
+const pendingRemovals = new Map<string, NodeJS.Timeout>();
+
+const cancelPendingRemoval = (roomId: string, participantId: string) => {
+  const key = `${roomId}:${participantId}`;
+  const timer = pendingRemovals.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    pendingRemovals.delete(key);
+  }
+};
+
 export const registerRoomHandlers = (io: Server, socket: Socket) => {
   const roomId: string = socket.data.roomId;
   const participantId: string = socket.data.participantId;
 
-  // Handle participant joining the room
   socket.on('join_room', async () => {
+    cancelPendingRemoval(roomId, participantId);
     socket.join(roomId);
-    
-    // Update socket ID in MongoDB
+
     const room = await roomStore.updateParticipantSocket(roomId, participantId, socket.id);
     if (!room) return;
-    
+
     const participant = room.participants.find(p => p.id === participantId);
     if (!participant) return;
 
-    // Send the current sync state to the new joiner
     socket.emit('sync_state', {
       isPlaying: room.videoState.isPlaying,
       currentTime: room.videoState.currentTime,
@@ -24,7 +35,6 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
       timestamp: room.videoState.lastUpdated
     });
 
-    // Broadcast user list to the room
     socket.to(roomId).emit('user_joined', {
       username: participant.username,
       participantId: participant.id,
@@ -33,14 +43,25 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     });
   });
 
-  // Handle explicit leave room
   socket.on('leave_room', async () => {
+    cancelPendingRemoval(roomId, participantId);
     await handleLeave(io, socket, roomId, participantId);
   });
 
-  // Handle disconnect
-  socket.on('disconnect', async () => {
-    await handleLeave(io, socket, roomId, participantId);
+  socket.on('disconnect', () => {
+    const key = `${roomId}:${participantId}`;
+    cancelPendingRemoval(roomId, participantId);
+
+    const timer = setTimeout(async () => {
+      pendingRemovals.delete(key);
+      try {
+        await handleLeave(io, socket, roomId, participantId);
+      } catch (err) {
+        console.error('Delayed leave failed:', err);
+      }
+    }, DISCONNECT_GRACE_MS);
+
+    pendingRemovals.set(key, timer);
   });
 };
 

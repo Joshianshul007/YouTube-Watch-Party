@@ -23,6 +23,8 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
     return participant?.role === 'host' || participant?.role === 'moderator';
   };
 
+  const isValidVideoId = (videoId: string) => /^[a-zA-Z0-9_-]{11}$/.test(videoId);
+
   socket.on('play', async (data: { currentTime: number }) => {
     if (!(await hasPermission())) return;
     
@@ -73,9 +75,12 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
   socket.on('change_video', async (data: { videoId: string }) => {
     if (!(await hasPermission())) return;
 
+    const trimmedVideoId = data.videoId?.trim();
+    if (!trimmedVideoId || !isValidVideoId(trimmedVideoId)) return;
+
     const updatedRoom = await roomStore.updateRoom(roomId, {
       videoState: {
-        videoId: data.videoId,
+        videoId: trimmedVideoId,
         isPlaying: true,
         currentTime: 0,
         lastUpdated: Date.now()

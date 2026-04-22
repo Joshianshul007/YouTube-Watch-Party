@@ -12,9 +12,12 @@ export const registerManagementHandlers = (io: Server, socket: Socket) => {
     return participant?.role === 'host';
   };
 
+  const allowedRoleAssignments = new Set(['moderator', 'participant']);
+
   // Assign role (promote/demote)
   socket.on('assign_role', async (data: { targetUserId: string; role: 'moderator' | 'participant' }) => {
     if (!(await isHost())) return;
+    if (!allowedRoleAssignments.has(data.role)) return;
 
     const room = await roomStore.getRoom(roomId);
     if (!room) return;

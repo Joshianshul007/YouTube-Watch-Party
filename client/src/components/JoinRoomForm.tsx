@@ -17,6 +17,14 @@ export const JoinRoomForm = () => {
     setIsLoading(true);
     try {
       const data = await joinRoom(roomCode, username);
+      localStorage.setItem(
+        `wp_session_${data.roomId}`,
+        JSON.stringify({
+          participantId: data.participantId,
+          role: data.role,
+          username,
+        })
+      );
       navigate(`/room/${data.roomId}`, {
         state: { participantId: data.participantId, role: data.role },
       });
