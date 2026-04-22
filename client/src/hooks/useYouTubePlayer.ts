@@ -59,15 +59,8 @@ export const useYouTubePlayer = (containerId: string) => {
               event.target.playVideo();
             }
           },
-          onStateChange: (event: YT.OnStateChangeEvent) => {
-            // Wait for Phase 7 to broadcast this to the server
-            // For now, we manually sync the local UI
-            if (event.data === window.YT.PlayerState.PLAYING) {
-              setVideoState(prev => ({ ...prev, isPlaying: true }));
-            }
-            if (event.data === window.YT.PlayerState.PAUSED) {
-              setVideoState(prev => ({ ...prev, isPlaying: false }));
-            }
+          onStateChange: (_event: YT.OnStateChangeEvent) => {
+            // Server sync_state is authoritative for playback state.
           }
         }
       });
@@ -79,15 +72,13 @@ export const useYouTubePlayer = (containerId: string) => {
     }
   }, [isReady, videoState.videoId]);
 
-  // Sync play/pause from external changes (e.g. controls bar)
+  // Sync play/pause from authoritative server state.
   useEffect(() => {
-    if (!playerRef.current || !isReady || typeof playerRef.current.getPlayerState !== 'function') return;
+    if (!playerRef.current || !isReady) return;
 
-    const state = playerRef.current.getPlayerState();
-    
-    if (videoState.isPlaying && state !== window.YT.PlayerState.PLAYING) {
+    if (videoState.isPlaying) {
       playerRef.current.playVideo();
-    } else if (!videoState.isPlaying && state === window.YT.PlayerState.PLAYING) {
+    } else {
       playerRef.current.pauseVideo();
     }
   }, [videoState.isPlaying, isReady]);

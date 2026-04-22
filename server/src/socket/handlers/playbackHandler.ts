@@ -40,6 +40,25 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
     if (updatedRoom) broadcastSyncState(updatedRoom);
   });
 
+
+  socket.on('toggle_playback', async (data: { currentTime: number }) => {
+    if (!(await hasPermission())) return;
+
+    const currentRoom = await roomStore.getRoom(roomId);
+    if (!currentRoom) return;
+
+    const updatedRoom = await roomStore.updateRoom(roomId, {
+      videoState: {
+        videoId: currentRoom.videoState.videoId || null,
+        isPlaying: !currentRoom.videoState.isPlaying,
+        currentTime: data.currentTime,
+        lastUpdated: Date.now()
+      }
+    } as any);
+
+    if (updatedRoom) broadcastSyncState(updatedRoom);
+  });
+
   socket.on('pause', async (data: { currentTime: number }) => {
     if (!(await hasPermission())) return;
 

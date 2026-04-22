@@ -23,11 +23,8 @@ export const ControlsBar = ({ duration = 0, onSeek }: ControlsBarProps) => {
   const isPrivileged = role === 'host' || role === 'moderator';
 
   const handlePlayPause = () => {
-    if (!videoState.videoId || !isPrivileged) return;
-    const isPlaying = !videoState.isPlaying;
-    if (socket) {
-      socket.emit(isPlaying ? 'play' : 'pause', { currentTime: videoState.currentTime });
-    }
+    if (!videoState.videoId || !isPrivileged || !socket) return;
+    socket.emit('toggle_playback', { currentTime: videoState.currentTime });
   };
 
   const handleLoadUrl = (e: React.FormEvent) => {
