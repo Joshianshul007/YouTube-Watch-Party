@@ -50,6 +50,7 @@ export const useYouTubePlayer = (containerId: string) => {
           disablekb: 1,
           modestbranding: 1,
           rel: 0,
+          origin: window.location.origin,
         },
         events: {
           onReady: (event: YT.OnReadyEvent) => {
