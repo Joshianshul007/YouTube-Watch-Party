@@ -8,6 +8,7 @@ import { registerRoomHandlers } from './handlers/roomHandler';
 import { registerPlaybackHandlers } from './handlers/playbackHandler';
 import { registerManagementHandlers } from './handlers/managementHandler';
 import { registerChatHandlers } from './handlers/chatHandler';
+import { createCorsOriginChecker } from '../utils/corsAllowlist';
 
 export type SocketServerInit = {
   io: Server;
@@ -15,29 +16,11 @@ export type SocketServerInit = {
 };
 
 export const initSocketServer = async (httpServer: HttpServer): Promise<SocketServerInit> => {
-  const normalizeOrigin = (value: string) => {
-    let v = value.trim().replace(/\/$/, '');
-    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-      v = v.slice(1, -1).trim();
-    }
-    return v;
-  };
-  const configured = (process.env.FRONTEND_URL || '')
-    .split(',')
-    .map(normalizeOrigin)
-    .filter(Boolean);
-  const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-  const isProd = process.env.NODE_ENV === 'production';
-  const allowlist = new Set([...configured, ...(isProd ? [] : devOrigins)]);
+  const corsOrigin = createCorsOriginChecker();
 
   const io = new Server(httpServer, {
     cors: {
-      origin: (origin, cb) => {
-        if (!origin) return cb(null, true);
-        if (allowlist.size === 0) return cb(null, true);
-        if (allowlist.has(normalizeOrigin(origin))) return cb(null, true);
-        return cb(null, false);
-      },
+      origin: corsOrigin,
       methods: ['GET', 'POST'],
       credentials: true
     }

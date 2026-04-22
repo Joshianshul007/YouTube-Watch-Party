@@ -1,58 +1,24 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import { initSocketServer } from './socket/socketServer';
 import roomRoutes from './routes/roomRoutes';
 import { connectDB } from './db/connect';
-
-dotenv.config();
+import { createCorsOriginChecker } from './utils/corsAllowlist';
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3001;
 
-const normalizeOrigin = (value: string) => {
-  let v = value.trim().replace(/\/$/, '');
-  if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
-    v = v.slice(1, -1).trim();
-  }
-  return v;
-};
-
-const allowedOrigins = (process.env.FRONTEND_URL || '')
-  .split(',')
-  .map(normalizeOrigin)
-  .filter(Boolean);
-
-const devOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-const isProd = process.env.NODE_ENV === 'production';
-const originAllowlist = new Set([
-  ...allowedOrigins,
-  ...(isProd ? [] : devOrigins),
-]);
-
-if (isProd && originAllowlist.size > 0) {
-  console.log('[CORS] Allowed origins:', [...originAllowlist].join(', '));
-} else if (isProd && originAllowlist.size === 0) {
-  console.warn('[CORS] FRONTEND_URL is empty — allowing any origin (set FRONTEND_URL for production).');
-}
+const corsOrigin = createCorsOriginChecker();
 
 app.use(
   cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true);
-      const cleaned = normalizeOrigin(origin);
-      if (originAllowlist.size === 0) return cb(null, true);
-      if (originAllowlist.has(cleaned)) return cb(null, true);
-      console.warn('[CORS] Blocked origin:', cleaned, '| allowlist:', [...originAllowlist].join(', '));
-      return cb(null, false);
-    },
+    origin: corsOrigin,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
     optionsSuccessStatus: 204,
   })
 );
