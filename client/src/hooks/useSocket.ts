@@ -5,11 +5,15 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import type { Participant, Role } from '../types';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL
-  ? import.meta.env.VITE_API_URL.replace('/api', '')
-  : import.meta.env.PROD
-    ? window.location.origin
-    : 'http://localhost:3001';
+const socketOriginFromApiEnv = () => {
+  const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  if (!raw) return null;
+  return raw.replace(/\/api\/?$/i, '').replace(/\/+$/, '');
+};
+
+const SOCKET_URL =
+  socketOriginFromApiEnv() ||
+  (import.meta.env.PROD ? window.location.origin : 'http://localhost:3001');
 
 export const useSocket = (roomId: string, participantId: string) => {
   const [localSocket, setLocalSocket] = useState<Socket | null>(null);

@@ -1,8 +1,17 @@
 import axios from 'axios';
 
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? '/api' : 'http://localhost:3001/api');
+/** Render host only (e.g. https://x.onrender.com) must become https://x.onrender.com/api — routes live under /api. */
+const normalizeApiBase = (raw: string) => {
+  const base = raw.trim().replace(/\/+$/, '');
+  if (base.endsWith('/api')) return base;
+  return `${base}/api`;
+};
+
+const API_URL = import.meta.env.VITE_API_URL
+  ? normalizeApiBase(import.meta.env.VITE_API_URL as string)
+  : import.meta.env.PROD
+    ? '/api'
+    : 'http://localhost:3001/api';
 
 export const api = axios.create({
   baseURL: API_URL,
