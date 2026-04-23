@@ -19,26 +19,6 @@ A real-time YouTube watch party web app. Create a room, share the 6-character co
 
 ---
 
-## Screenshots
-
-> _Replace the paths below with real screenshots. Suggested captures:_
->
-> 1. Landing page (`Create Party` / `Join Party` tabs)
-> 2. Room view with video playing + participant list + chat
-> 3. Host action menu (promote / demote / kick / transfer host)
-> 4. Mobile/responsive view
-
-```
-docs/screenshots/landing.png
-docs/screenshots/room.png
-docs/screenshots/host-menu.png
-docs/screenshots/mobile.png
-```
-
-_Missing in repo:_ a `docs/screenshots/` folder. Add 3–4 PNGs before submission so the README renders images inline on GitHub.
-
----
-
 ## Features
 
 - **Synced playback** — play, pause, seek, and change-video events are propagated to every participant within a fixed drift tolerance.
@@ -346,10 +326,5 @@ Handshake auth: `{ roomId, participantId }` sent via `io(url, { auth: ... })`. T
 ## Author
 
 **Joshi** — Full-stack developer
-
-- Portfolio: _add link_
-- LinkedIn: _add link_
-- GitHub: _add link_
-- Email: _add email_
 
 If you spin up a fork or find a bug, open an issue or reach out.
