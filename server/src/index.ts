@@ -30,6 +30,18 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Readiness probe. Populated after `initSocketServer` resolves. Load balancers
+// should use this endpoint to rotate instances out when Redis is down (the
+// instance can still serve HTTP but cross-node Socket.IO broadcasts will fail).
+let isRedisHealthy: () => boolean = () => false;
+
+app.get('/api/ready', (req, res) => {
+  if (!isRedisHealthy()) {
+    return res.status(503).json({ status: 'degraded', redis: false });
+  }
+  return res.json({ status: 'ready', redis: true });
+});
+
 const shouldServeClient =
   process.env.NODE_ENV === 'production' && process.env.SERVE_CLIENT !== 'false';
 
@@ -56,7 +68,9 @@ if (shouldServeClient) {
 const bootstrap = async () => {
   await connectDB();
 
-  const { shutdownRedis } = await initSocketServer(server);
+  const init = await initSocketServer(server);
+  const { shutdownRedis } = init;
+  isRedisHealthy = init.isRedisHealthy;
 
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

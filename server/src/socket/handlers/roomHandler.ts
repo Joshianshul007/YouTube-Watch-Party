@@ -1,44 +1,42 @@
 import { Server, Socket } from 'socket.io';
 import { roomStore } from '../../store/RoomStore';
+import { syncSocketRoleCache } from '../utils/roleCache';
 
 const DISCONNECT_GRACE_MS = 15000;
-
-const pendingRemovals = new Map<string, NodeJS.Timeout>();
-
-const cancelPendingRemoval = (roomId: string, participantId: string): boolean => {
-  const key = `${roomId}:${participantId}`;
-  const timer = pendingRemovals.get(key);
-  if (timer) {
-    clearTimeout(timer);
-    pendingRemovals.delete(key);
-    return true;
-  }
-  return false;
-};
 
 export const registerRoomHandlers = (io: Server, socket: Socket) => {
   const roomId: string = socket.data.roomId;
   const participantId: string = socket.data.participantId;
 
   socket.on('join_room', async () => {
-    const wasReconnect = cancelPendingRemoval(roomId, participantId);
+    // Peek BEFORE we overwrite so we can tell whether this was a fresh join
+    // or a reconnect within the grace window. One lean projected read.
+    const prevDisconnectedAt = await roomStore.peekDisconnectedAt(roomId, participantId);
+    const wasReconnect =
+      typeof prevDisconnectedAt === 'number' &&
+      Date.now() - prevDisconnectedAt < DISCONNECT_GRACE_MS;
+
     socket.join(roomId);
 
+    // Single write: sets socketId AND clears disconnectedAt atomically.
     const room = await roomStore.updateParticipantSocket(roomId, participantId, socket.id);
     if (!room) return;
 
-    const participant = room.participants.find(p => p.id === participantId);
+    const participant = room.participants.find((p) => p.id === participantId);
     if (!participant) return;
+
+    // Participant's role may have changed since handshake (e.g. host transferred
+    // while this client was briefly disconnected). Re-sync cached identity.
+    socket.data.role = participant.role;
+    socket.data.hostId = room.hostId;
 
     socket.emit('sync_state', {
       isPlaying: room.videoState.isPlaying,
       currentTime: room.videoState.currentTime,
       videoId: room.videoState.videoId,
-      timestamp: room.videoState.lastUpdated
+      timestamp: room.videoState.lastUpdated,
     });
 
-    // Always re-hydrate the joining client with the authoritative participant list
-    // (covers role changes and mid-join race with other user_joined broadcasts).
     socket.emit('room_snapshot', {
       participantId: participant.id,
       role: participant.role,
@@ -47,8 +45,6 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
     });
 
     if (wasReconnect) {
-      // Silent rejoin: other clients just need a fresh participants list
-      // (in case socketId changed), but no "joined the party" toast.
       socket.to(roomId).emit('user_reconnected', {
         participantId: participant.id,
         username: participant.username,
@@ -59,91 +55,93 @@ export const registerRoomHandlers = (io: Server, socket: Socket) => {
         username: participant.username,
         participantId: participant.id,
         role: participant.role,
-        participants: room.participants
+        participants: room.participants,
       });
     }
   });
 
   socket.on('leave_room', async () => {
-    cancelPendingRemoval(roomId, participantId);
+    // Explicit leave — skip the grace window entirely.
     await handleLeave(io, socket, roomId, participantId);
   });
 
   socket.on('disconnect', async () => {
-    // Guard against stale disconnect events firing AFTER a newer socket has already
-    // re-authenticated for the same participant (common on browser refresh).
+    // Mark the grace window in Mongo (NOT in per-process memory), keyed off
+    // this exact socketId so a superseding reconnect on another Node instance
+    // is a conditional no-op here.
+    const myTimestamp = Date.now();
+    let writtenAt: number | null = null;
     try {
-      const current = await roomStore.getRoom(roomId);
-      const cp = current?.participants.find(p => p.id === participantId);
-      if (!cp) return;
-      if (cp.socketId && cp.socketId !== socket.id) return;
-    } catch { /* fall through to grace handling */ }
+      writtenAt = await roomStore.markDisconnected(
+        roomId,
+        participantId,
+        socket.id,
+        myTimestamp
+      );
+    } catch (err) {
+      console.error('markDisconnected failed:', err);
+      return;
+    }
+    if (writtenAt === null) {
+      // Either the participant already reconnected (newer socketId) or was
+      // already removed. Nothing to schedule.
+      return;
+    }
 
-    const key = `${roomId}:${participantId}`;
-    cancelPendingRemoval(roomId, participantId);
-
-    const timer = setTimeout(async () => {
-      pendingRemovals.delete(key);
+    // After the grace window, check Mongo state directly. We do NOT keep a
+    // local Map — any Node instance may have owned the last disconnect, and
+    // this one may not even be the one that owns the reconnect.
+    setTimeout(async () => {
       try {
-        // Final race check: don't remove if a newer socket has taken over during grace.
-        const current = await roomStore.getRoom(roomId);
-        const cp = current?.participants.find(p => p.id === participantId);
-        if (cp && cp.socketId && cp.socketId !== socket.id) return;
-
+        const current = await roomStore.peekDisconnectedAt(roomId, participantId);
+        // `undefined` → removed elsewhere. `null` → reconnected. A different
+        // number → a later disconnect superseded us (its own timer will fire).
+        if (current !== writtenAt) return;
         await handleLeave(io, socket, roomId, participantId);
       } catch (err) {
         console.error('Delayed leave failed:', err);
       }
     }, DISCONNECT_GRACE_MS);
-
-    pendingRemovals.set(key, timer);
   });
 };
 
-const handleLeave = async (io: Server, socket: Socket, roomId: string, participantId: string) => {
-  const previousRoom = await roomStore.getRoom(roomId);
-  if (!previousRoom) return;
+const handleLeave = async (
+  io: Server,
+  socket: Socket,
+  roomId: string,
+  participantId: string
+) => {
+  // Cached identity on the departing socket tells us username + role without a read.
+  const leavingUsername: string = socket.data.username ?? 'User';
+  const leavingRole: string = socket.data.role ?? 'participant';
 
-  const leavingParticipant = previousRoom.participants.find(p => p.id === participantId);
-  if (!leavingParticipant) return;
-
-  // Remove participant from MongoDB
   const room = await roomStore.removeParticipant(roomId, participantId);
   if (!room) return;
 
   socket.to(roomId).emit('user_left', {
-    username: leavingParticipant.username,
-    participantId: participantId,
-    participants: room.participants
+    username: leavingUsername,
+    participantId,
+    participants: room.participants,
   });
 
-  // Automatically assign new host if host leaves
-  if (leavingParticipant.role === 'host' && room.participants.length > 0) {
+  // Automatically reassign host if the host just left.
+  if (leavingRole === 'host' && room.participants.length > 0) {
     const sortedParticipants = [...room.participants].sort(
       (a, b) => new Date(a.joinedAt).getTime() - new Date(b.joinedAt).getTime()
     );
     const oldestModerator = sortedParticipants.find((p) => p.role === 'moderator');
-    const fallbackParticipant = sortedParticipants[0];
-    const nextHostCandidate = oldestModerator ?? fallbackParticipant;
+    const nextHost = oldestModerator ?? sortedParticipants[0];
+    if (!nextHost) return;
 
-    if (!nextHostCandidate) return;
+    // Single atomic write: set hostId + promote the chosen participant.
+    const finalRoom = await roomStore.assignNewHost(roomId, nextHost.id);
+    if (!finalRoom) return;
 
-    const finalRoom = await roomStore.getRoom(roomId);
-    if (finalRoom) {
-      const newHost = finalRoom.participants.find(p => p.id === nextHostCandidate.id);
-      if (newHost) {
-        newHost.role = 'host';
-        finalRoom.hostId = newHost.id;
-        await finalRoom.save();
-        
-        io.to(roomId).emit('host_transferred', {
-          newHostId: newHost.id,
-          participants: finalRoom.participants
-        });
-      }
-    }
+    syncSocketRoleCache(io, finalRoom.participants, finalRoom.hostId);
+
+    io.to(roomId).emit('host_transferred', {
+      newHostId: nextHost.id,
+      participants: finalRoom.participants,
+    });
   }
-
-  // Cleanup empty room - Mongo doesn't strictly need rapid cleanup, but we can do it later
-  // Skip cleanup to retain history
 };

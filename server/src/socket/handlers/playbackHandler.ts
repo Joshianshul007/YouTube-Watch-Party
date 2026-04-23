@@ -1,6 +1,5 @@
 import { Server, Socket } from 'socket.io';
-import { roomStore } from '../../store/RoomStore';
-import { IMongoRoom } from '../../models/RoomSchema';
+import { roomStore, LeanRoom } from '../../store/RoomStore';
 
 // --- Rate-limit / coalesce settings ----------------------------------------
 // Leading-edge applies immediately, subsequent seek events within the window
@@ -25,7 +24,6 @@ type SeekBuffer = {
 
 export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
   const roomId: string = socket.data.roomId;
-  const participantId: string = socket.data.participantId;
 
   const seekBuf: SeekBuffer = {
     pendingTime: null,
@@ -37,7 +35,7 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
 
   const lastControlEventAt: Record<string, number> = {};
 
-  const broadcastSyncState = (room: IMongoRoom) => {
+  const broadcastSyncState = (room: LeanRoom) => {
     io.in(roomId).emit('sync_state', {
       isPlaying: room.videoState.isPlaying,
       currentTime: room.videoState.currentTime,
@@ -46,8 +44,10 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
     });
   };
 
-  const hasPermission = async (): Promise<boolean> => {
-    const role = await roomStore.getParticipantRole(roomId, participantId);
+  // Role is cached on socket.data at handshake and invalidated by the
+  // management/room handlers when it changes. No DB read per playback event.
+  const isPrivileged = (): boolean => {
+    const role = socket.data.role;
     return role === 'host' || role === 'moderator';
   };
 
@@ -71,7 +71,7 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
     seekBuf.pendingTime = null;
     if (target == null) return;
 
-    if (!(await hasPermission())) return;
+    if (!isPrivileged()) return;
 
     const updatedRoom = await roomStore.updateVideoStateFields(roomId, {
       currentTime: target,
@@ -119,7 +119,7 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
   socket.on('play', async (data: { currentTime: number }) => {
     if (!isValidTime(data?.currentTime)) return;
     if (!throttleControl('play')) return;
-    if (!(await hasPermission())) return;
+    if (!isPrivileged()) return;
 
     const updatedRoom = await roomStore.updateVideoStateFields(roomId, {
       isPlaying: true,
@@ -133,24 +133,18 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
   socket.on('toggle_playback', async (data: { currentTime: number }) => {
     if (!isValidTime(data?.currentTime)) return;
     if (!throttleControl('toggle_playback')) return;
-    if (!(await hasPermission())) return;
+    if (!isPrivileged()) return;
 
-    const currentRoom = await roomStore.getRoom(roomId);
-    if (!currentRoom) return;
-
-    const updatedRoom = await roomStore.updateVideoStateFields(roomId, {
-      isPlaying: !currentRoom.videoState.isPlaying,
-      currentTime: data.currentTime,
-      lastUpdated: Date.now(),
-    });
-
+    // Single atomic aggregation-pipeline update: flips isPlaying server-side,
+    // no read-before-write.
+    const updatedRoom = await roomStore.togglePlaybackAtomic(roomId, data.currentTime);
     if (updatedRoom) broadcastSyncState(updatedRoom);
   });
 
   socket.on('pause', async (data: { currentTime: number }) => {
     if (!isValidTime(data?.currentTime)) return;
     if (!throttleControl('pause')) return;
-    if (!(await hasPermission())) return;
+    if (!isPrivileged()) return;
 
     const updatedRoom = await roomStore.updateVideoStateFields(roomId, {
       isPlaying: false,
@@ -163,12 +157,10 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
 
   socket.on('host_heartbeat', async (data: { currentTime: number; isPlaying: boolean }) => {
     if (!isValidTime(data?.currentTime)) return;
-    if (!(await hasPermission())) return;
+    if (!isPrivileged()) return;
 
-    const currentRoom = await roomStore.getRoom(roomId);
-    if (!currentRoom?.videoState.videoId) return;
-
-    await roomStore.updateVideoStateFields(roomId, {
+    // Single conditional write: only applies if a video is loaded. Zero reads.
+    await roomStore.heartbeatVideoState(roomId, {
       isPlaying: !!data.isPlaying,
       currentTime: Math.max(0, data.currentTime),
       lastUpdated: Date.now(),
@@ -178,7 +170,7 @@ export const registerPlaybackHandlers = (io: Server, socket: Socket) => {
 
   socket.on('change_video', async (data: { videoId: string }) => {
     if (!throttleControl('change_video')) return;
-    if (!(await hasPermission())) return;
+    if (!isPrivileged()) return;
 
     const trimmedVideoId = data.videoId?.trim();
     if (!trimmedVideoId || !isValidVideoId(trimmedVideoId)) return;
