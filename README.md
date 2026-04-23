@@ -111,8 +111,3 @@ VITE_API_URL=<your backend URL>/api
 ```
 
 Point your platform's health check at `/api/ready` — it returns `503` when Redis is configured but unreachable, so unhealthy instances get rotated out.
-
-## More Documentation
-
-- [`OPTIMIZATIONS.md`](./OPTIMIZATIONS.md) — Changelog of perf, scale, and reliability work.
-- [`INTERVIEW_NOTES.md`](./INTERVIEW_NOTES.md) — Design rationale and technical deep-dives.

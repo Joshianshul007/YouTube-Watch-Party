@@ -3,3 +3,8 @@ dist
 .env
 *.db
 .DS_Store
+
+# Local-only notes (not published to GitHub)
+OPTIMIZATIONS.md
+INTERVIEW_NOTES.md
+implementation_plan.md
