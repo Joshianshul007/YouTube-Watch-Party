@@ -7,4 +7,6 @@ dist
 # Local-only notes (not published to GitHub)
 OPTIMIZATIONS.md
 INTERVIEW_NOTES.md
+INTERVIEW_NOTES.html
+INTERVIEW_NOTES.pdf
 implementation_plan.md
