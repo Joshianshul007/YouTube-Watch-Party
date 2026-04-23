@@ -11,6 +11,10 @@ declare global {
 
 const PLAY_DRIFT_TOLERANCE_SEC = 1.0;
 const PAUSE_DRIFT_TOLERANCE_SEC = 0.3;
+// After the local user (host) initiates a seek, briefly suppress drift-correction
+// from the server echo so the YouTube player's internal seek animation isn't
+// interrupted and we don't fight our own authoritative update.
+const LOCAL_SEEK_SUPPRESS_MS = 600;
 
 export const useYouTubePlayer = (containerId: string) => {
   const { videoState, role, socket } = useRoom();
@@ -25,6 +29,7 @@ export const useYouTubePlayer = (containerId: string) => {
   const latestSyncRef = useRef<VideoState>(videoState);
   const lastAppliedUpdateRef = useRef<number>(0);
   const lastAppliedVideoIdRef = useRef<string | null>(null);
+  const lastLocalSeekAtRef = useRef<number>(0);
 
   useEffect(() => {
     latestSyncRef.current = videoState;
@@ -67,7 +72,9 @@ export const useYouTubePlayer = (containerId: string) => {
       const localT = typeof player.getCurrentTime === 'function' ? player.getCurrentTime() : 0;
       const drift = Math.abs(localT - target);
       const tol = s.isPlaying ? PLAY_DRIFT_TOLERANCE_SEC : PAUSE_DRIFT_TOLERANCE_SEC;
-      if (drift > tol) {
+      const withinLocalSeekWindow =
+        Date.now() - lastLocalSeekAtRef.current < LOCAL_SEEK_SUPPRESS_MS;
+      if (drift > tol && !withinLocalSeekWindow) {
         player.seekTo(target, true);
       }
     } catch { /* ignore */ }
@@ -213,6 +220,7 @@ export const useYouTubePlayer = (containerId: string) => {
 
   const seekTo = useCallback((seconds: number) => {
     if (playerRef.current && playerReady) {
+      lastLocalSeekAtRef.current = Date.now();
       try { playerRef.current.seekTo(seconds, true); } catch { /* ignore */ }
     }
   }, [playerReady]);
